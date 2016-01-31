@@ -1,2 +1,2 @@
 # testgithub
-github tutorial
+this project is about testing github for beginners. 
