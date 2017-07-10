@@ -1,0 +1,485 @@
+<center>
+
+#**STAT W4701 Exploratory Data Analysis and Visualization **
+####Spring 2016
+####Project 3
+##Group 9: The Brockovich-es
+
+
+</center>
+
+
+## Section 1: Motivation
+
+#### The recent news reports of <a href = "https://en.wikipedia.org/wiki/Flint_water_crisis"> contamination in drinking water </a> posing severe health hazards to the residents on Flint, MI provided the motivation for our team's project. 
+
+## Section 2: Data Sources
+
+#### We relied on public data sources for the purpose of this project. We list our data sources below and what we used each one for.
+
+  + ### *U.S. Geological Survey Data*
+
+#### We obtained data about the different water quality test sites across the country from this data source. We also got data about annual aggregate values of various chemicals that were measured at these sites. We selected the data for 2014 and checked all the  boxes in the options and then downloaded the data in .csv format.
+
+<a href = http://cida.usgs.gov/quality/rivers/download> **USGS Data Source 1** </a>
+(No pre processing needed to this dataset. It is already cleaned. Any subsetting we do for the purposes of visualization has been included as part of our code.)
+
+  + ###*Table of Regulated Drinking Water Contaminants data*
+
+#### From this source, we got information about what health hazards are caused by what contaminants. This was our data source for the Sankey plot.
+
+#### (We had to take the text from this page and put it in a csv file and clean it up before we could get it ready for plotting. We are including our cleaned file as part of our project in order to make our plot quickly replicatable)
+
+<a href = https://www.epa.gov/your-drinking-water/table-regulated-drinking-water-contaminants>  **Data Source** </a>
+
+
+  + ### *Unregulated Drinking Water Contaminants data*
+
+#### The Environmental Protection Agency monitors presence of various chemicals in our water systems even if they aren't regulated yet.  
+
+#### This data allowed us to make the plots in Section 7 and 8.  
+
+<a href = https://www.epa.gov/dwucmr>  **Source 1** </a>  
+
+<a href = http://www.ewg.org/enviroblog/2015/08/your-drinking-water-contaminated-toxic-non-stick-chemicals>  **Source 2** </a>  
+
+
+  + ### *EPA 2010 data on reported health violations from water systems*
+
+#### We used this data source to visualize which state reported the most health violations. This dataset also gave us information about the percentage of state population that are being served by unclean water. The data was not in the perfect format when we downloaded it. We had to clean it in Excel. We are including the Excel file here so you can replicate the plots.
+
+
+<a href = http://www.agriculturedefensecoalition.org/sites/default/files/file/texas_449/449E_2011_EPA_Fiscal_Year_2010_Drinking_Water_and_Ground_Water_Statistics_June_2011.pdf> **Data Source** </a>
+
+```{r global_options, include=FALSE}
+knitr::opts_chunk$set(echo=FALSE, warning=FALSE, message=FALSE)
+```
+```{r libraries}
+library(lattice)
+library(grid)
+library(maps)
+library(mapdata)
+library(sp)
+library(maptools)
+library(leaflet)
+library(jsonlite)
+library(reshape)
+library(rpivotTable)
+library(lsr)
+library(colorspace)
+library(scales)
+library(DBI)
+library(plotly)
+library(devtools)
+library(Rcpp)
+library(plyr)
+require(rCharts)
+require(googleVis)
+```
+## Section 3: Plot of testing sites by type and drainage area.
+
+#### In our first plot, we look at all the sites around the country where water quality is being tested. Some of these sites are more important than others, because the drainage area of the water sources are larger and hence they serve a larger area. We split all the sites into quantiles of the drainage area and the **larger sites are shown with a larger size icon**. In addition, we also differentiate the categories of these sites with different colors.
+
+#### We notice that the <span style="color:green">**green dots**</span> in the Mississippi basin show up as belonging to the **Inland Rivers** category (just as we would expect) and the <span style="color:red">**red dots**</span> along the coast are the **Coastal Rivers**.
+
+#### This plot has been made interactive, allowing the user to scroll in and out. Please note that when you click on a site, a popup pulls up that shows you various atributes of the site.
+<center>
+```{r include=FALSE}
+
+annualFlow<- read.csv("data/annualFlow.csv",header = T, skip = 6)
+dailyFlow<- read.csv("data/dailyFlow.csv",header = T, skip = 7)
+sampleConc<-read.csv("data/sampleConcentrations.csv", header = T, skip = 9)
+siteAttr<-read.csv("data/Site_attribute.csv", header = T, skip = 10)
+viol<-read.csv("data/reported_violation_cleaned.csv", header = T)
+viol[is.na(viol)]<-0 #remove NAs from dataframe and store them as 0s
+
+#Function that assigns a marker size based on Drainage Area
+getRadValue <- function(x) {
+  if (x>=36775) { retVal <-10}
+  else if (x>=6830) {retVal<-8}
+  else if (x>=228) {retVal<-6}
+  else retVal<-4
+  return(retVal)
+}
+#Find Marker Size for all the sites and then add that column to the data frame for mappping
+x<-vector()
+for (i in (1:nrow(siteAttr)))
+{
+  da<-siteAttr[i,"DA"]
+  x<-c(x,getRadValue(da))
+}
+x<-as.factor(x)
+siteAttr$MarkerRadius<-x #add this column to the data frame
+
+```
+
+
+
+```{r,fig.width=10, fig.height=8}
+#draw a map of where all the water quality test sites are
+pal <- colorFactor(c("purple", "red", "green", "orange","blue"), domain = siteAttr$SITE_TYPE)
+
+m<-leaflet()
+m<-addTiles(m)
+m<-addCircleMarkers(m
+              ,lng = siteAttr$LONGITUDE
+              , lat = siteAttr$LATITUDE
+              , popup = paste("Site Name:", siteAttr$SITE_QW_NAME, "<br>"
+                              , "Drain Area:", siteAttr$DA," sq miles", "<br>"
+                              , "Site Type:", siteAttr$SITE_TYPE)
+              #, clusterOptions = markerClusterOptions()
+              , radius = siteAttr$MarkerRadius
+              , fillOpacity = 0.5
+              , color = pal(siteAttr$SITE_TYPE)
+              )
+
+m<-addLegend(m
+             , position = "topright"
+             ,pal = pal
+             , values = siteAttr$SITE_TYPE)
+m
+```
+</center>
+## Section 4: Plot of testing sites by type and drainage area (with Clustering Options added)#
+#### This plot is essentially the same as the previous one, but we enabled Clustering options to see how the test sites were clustered around regions of the country.
+
+<center>
+```{r,fig.width=10, fig.height=8}
+#****** WITH CLUSTER OPTIONS *****
+m<-leaflet()
+m<-addTiles(m)
+m<-addCircleMarkers(m
+                    ,lng = siteAttr$LONGITUDE
+                    , lat = siteAttr$LATITUDE
+                    , popup = paste("Site Name:", siteAttr$SITE_QW_NAME, "<br>"
+                                    , "Drain Area:", siteAttr$DA," sq miles" , "<br>"
+                                    , "Site Type:", siteAttr$SITE_TYPE)
+                    , clusterOptions = markerClusterOptions()
+                    , radius = siteAttr$MarkerRadius
+                    , fillOpacity = 0.5
+                    , color = pal(siteAttr$SITE_TYPE)
+                    , stroke = TRUE
+)
+m<-addLegend(m
+             , position = "topright"
+             ,pal = pal
+             , values = siteAttr$SITE_TYPE)
+m
+```
+</center>
+
+## Section 5: Trellis plot of concentration of nutrients/contaminants that were found in the testing sites#
+
+<center>
+
+```{r include==FALSE}
+
+AL<-read.csv("data/annualLoad.csv",skip=12)
+Site_location<-read.csv("data/Site_attribute.csv",skip=10)
+#combind data with site attribution
+Full_data<-merge(AL, Site_location)
+Full_data1<-Full_data[,c(1,3,9,14,15)]
+#get each nutrients
+nitrate_nitrite<-subset(Full_data1, CONSTIT=="NO3_NO2")
+total_nitrogen<-subset(Full_data1, CONSTIT=="TN")
+total_phosphorus<-subset(Full_data1, CONSTIT=="TP")
+ssc<-subset(Full_data1, CONSTIT=="SSC")
+#Create SSC shingle for xyplot
+tmp1<-c(0,60,120,180,max(ssc$FWC))
+SSC<-shingle(ssc$FWC, intervals=cbind( tmp1[-5], tmp1[-1] ) ) 
+#Create shingle for TP
+tmp2<-c(0,0.025,0.05,0.1,max(total_phosphorus$FWC))
+Total_Phosphorus<-shingle(total_phosphorus$FWC, intervals=cbind( tmp2[-5], tmp2[-1] ) ) 
+#Create shingle for TN
+tmp3<-c(0,0.8,2,10,max(total_nitrogen$FWC))
+Total_Nitrogen<-shingle(total_nitrogen$FWC,interval=cbind( tmp3[-5],tmp3[-1]))
+#Create shingle for NO3_NO2
+tmp4<-c(0,1,2.5,5,10,15)
+Nitrate_Nitrite<-shingle(nitrate_nitrite$FWC,cbind ( tmp4[-6],tmp4[-1])) 
+```
+
+
+```{r,include=FALSE}
+mymap<-map("state",fill=TRUE)
+```
+```{r, fig.width=10, fig.height=8}
+MyText1 <-c("0 mg/L<SSC<60 mg/L","60 mg/L<SSC<120 mg/L","120 mg/L<SSC<180 mg/L","SSC>180 mg/L")
+xyplot(LATITUDE~LONGITUDE | SSC, data = ssc, xlab="Longitude", ylim=c(25,55),
+       xlim=c(-135,-60),
+       ylab = "Latitude", pch=16,cex=1,col="darkorange3",
+       main="Suspended Sediment Concentration",
+       panel=function(x, y,...) {
+         panel.polygon(mymap$x,mymap$y,fill=TRUE,col="lightblue1")
+         panel.xyplot(x,y,...)
+         grid.text(MyText1[panel.number()], unit(0.5, 'npc'), unit(0.9, 'npc'))
+       })
+```
+&nbsp;  
+0-60: soft  
+61-120: moderate hard  
+121-180: hard  
+181+: very hard  
+&nbsp;  
+
+</center>
+
+#### The hardness of water will be reported in grains per gallon, milligrams per liter (mg/l). The reason for setting an upper limit on hardness is that hard water can cause calcium carbonate scale deposits in automated watering systems, which can lead to drinking valve leaks and other operational problems. According to the Water Quality Association, water is considered "hard" when the measured hardness exceeds 120 mg/L. 
+
+<center>
+```{r, fig.width=10, fig.height=8}
+#Trellis plot for TP
+MyText2<-c("0 mg/L<TP<0.025 mg/L","0.025 mg/L<TP<0.05 mg/L","0.05 mg/L<TP<0.1 mg/L","TP>0.1 mg/L")
+xyplot(LATITUDE~LONGITUDE | Total_Phosphorus, data = total_phosphorus, xlab="Longitude", ylim=c(25,55),
+       xlim=c(-135,-60),
+       ylab = "Latitude", pch=16,cex=1,col="darkorange3",
+       main="Total Phosphorus",
+       panel=function(x, y,...) {
+         panel.polygon(mymap$x,mymap$y,fill=TRUE,col="lightblue1")
+         panel.xyplot(x,y,...)
+         grid.text(MyText2[panel.number()], unit(0.5, 'npc'), unit(0.9, 'npc'))
+       })
+```
+&nbsp;  
+
+0.00 - 0.025 mg/L: the level in uncontaminated lakes  
+0.025 - 0.05mg/L:  level at which plant growth is stimulated  
+0.05- 0.1 mg/L:  maximum acceptable to avoid accelerated eutrophication  
+0.1+ mg/L: accelerated growth and consequent problems  
+
+</center>
+
+#### If too much phosphate is present in the water the algae and weeds will grow rapidly, may choke the waterway, and use up large amounts of precious oxygen (in the absence of photosynthesis and as the algae and plants die and are consumed by aerobic bacteria.) The result may be the death of many fish and aquatic organisms.
+
+<center>
+
+```{r, fig.width=10, fig.height=8}
+#Trellis plot for NO3_NO2
+MyText4<-c("0 mg/L<NN<1 mg/L","1 mg/L<NN<2.5 mg/L","2.5 mg/L<NN<5 mg/L","5 mg/L<NN<10 mg/L","NN>10 mg/L")
+xyplot(LATITUDE~LONGITUDE | Nitrate_Nitrite , data = nitrate_nitrite, xlab="Longitude", ylim=c(25,55),
+       xlim=c(-135,-60),
+       ylab = "Latitude", pch=16,cex=1,col="darkorange3",
+       main="Nitrate & Nitrite",
+       panel=function(x, y,...) {
+         panel.polygon(mymap$x,mymap$y,fill=TRUE,col="lightblue1")
+         panel.xyplot(x,y,...)
+         grid.text(MyText4[panel.number()], unit(0.5, 'npc'), unit(0.9, 'npc'))
+       })
+```
+</center>
+&nbsp;  
+
+#### The United States EPA, under the authority of the Safe Drinking Water Act (SDWA), has set the Maximum Contaminant Level Goal (MCLG) for nitrate  at 10.0 mg/L and for nitrite at 1.0 mg/L (measured as nitrogen, N). This is the health-based goal at which no known or anticipated adverse effects on human health occur and for which an adequate margin of safety exists. Infants below the age of six months who drink water containing nitrate in excess of the MCL could become seriously ill and, if untreated, may die. Symptoms include shortness of breath and blue-baby syndrome.
+
+<center>
+
+```{r, fig.width=10, fig.height=8}
+#Trellis plot for TN
+MyText3<-c("0 mg/L<TN<0.8 mg/L","0.8 mg/L<TN<2 mg/L","2 mg/L<TN<10 mg/L","TN>10 mg/L")
+xyplot(LATITUDE~LONGITUDE | Total_Nitrogen, data = total_nitrogen, xlab="Longitude", ylim=c(25,55),
+       xlim=c(-135,-60),
+       ylab = "Latitude", pch=16,cex=1,col="darkorange3",
+       main="Total Nitrogen",
+       panel=function(x, y,...) {
+         panel.polygon(mymap$x,mymap$y,fill=TRUE,col="lightblue1")
+         panel.xyplot(x,y,...)
+         grid.text(MyText3[panel.number()], unit(0.5, 'npc'), unit(0.9, 'npc'))
+       })
+```
+
+</center>
+&nbsp;  
+
+#### Total nitrogen refers to the combination of both organic and inorganic N. While it can be measured directly in the laboratory, it is also commonly approximated by adding TKN and nitrite+nitrate-N concentrations. Any level above 10 mg/L is harmful for health.
+
+## Section 6: Sankey plot: Contaminant and disease connection  
+&nbsp; 
+
+#### The U.S. Environmental Protection Agency (EPA) provides a list of contaminants whose concentration in drinking water it regulates. These contaminants are separated into six broad categories: Microorganisms (Viruses, Parasites, Bacteria), Disinfectants (Chlorine, Chlorine Dioxide), Disinfection Byproducts (Bromate, Chlorite), Inorganic Chemicals (Arsenic, Cyanide, Lead, Mercury, Nitrite, Nitrate), Organic Chemicals (Benzene, Vinyl Chloride, Acrylamide), and Radionuclides (Alpha particles, beta particles, Uranium). Each contaminant is given a maximum contaminant level (MCL), which is the largest amount permitted in drinking water. Levels above those thresholds can lead to many health problems and diseases, especially when exposed for a long period of time. For example, lead can cause high blood pressure in adults and developmental issues in children; radioactive particles increase the chances of cancer; and Benzene can lead to anemia. The following Sankey diagram maps each type of contaminant to the health disorders that they can potentially cause.  
+
+##### Note: The contaminants that have a disease of "None" listed are coliforms and heterotrophic plate counts (HPC), which are used to detect levels of bacteria in water.
+
+<center>
+```{r,include=FALSE}
+EPA_Contaminant_Diseases <- read.csv(file="data/EPA_Water_Contaminants.csv",
+							header=TRUE,sep=",",stringsAsFactors=FALSE)
+ContaminantDiseaseCount <- count(EPA_Contaminant_Diseases, 
+                                 c('ContaminantType','PotentialHealthEffect'))
+
+M <- gvisSankey(ContaminantDiseaseCount, from="ContaminantType", 
+                to="PotentialHealthEffect", weight="freq",
+                options=list(
+                  height=600, width=1000,
+                  sankey="{link:{color:{fill:'lightblue'}}}"
+                ))
+
+EPA_Contaminant_Diseases_Summary <- read.csv(file="data/EPA_Water_Contaminants_Aggregated.csv",
+                                     header=TRUE,sep=",",stringsAsFactors=FALSE)
+
+ContaminantDiseaseCount_Summary <- count(EPA_Contaminant_Diseases_Summary, 
+                                 c('ContaminantType','PotentialHealthEffect'))
+
+N <- gvisSankey(ContaminantDiseaseCount_Summary, from="ContaminantType", 
+                to="PotentialHealthEffect", weight="freq",
+                options=list(
+                  height=600, width=1000,
+                  sankey="{link:{color:{fill:'lightblue'}}}"
+                ))
+
+```
+```{r}
+library(googleVis)
+op <- options(gvis.plot.tag="chart")
+```
+
+```{r results='asis', tidy=TRUE,fig.width=9, fig.height=8}
+#plot(M)
+plot(M)
+```
+</center>
+&nbsp;  
+&nbsp;  
+&nbsp;  
+
+#### This plot condenses the health diseases into a smaller number of categories (ex. "Anemia" and "Increased Blood Pressure" now fall under "Blood Problems", etc.).
+&nbsp;  
+
+<center>
+
+```{r results='asis', tidy=TRUE,fig.width=9, fig.height=8}
+
+plot(N)
+
+
+```
+
+
+</center>
+
+## Section 7: Aggregate plot of water quality by state
+
+#### In this plot, we plot the aggregate of health violations that were reported in each state from community water systems and the percentage of state population that was affected by that water system contamination. 
+
+#### We tried to replicate the plot that we saw <a href = "http://www.mnn.com/earth-matters/translating-uncle-sam/stories/how-polluted-is-us-drinking-water"> **here** </a>.
+
+#### This map is also interactive. If you move the mouse over each state, you will see that % of population that is affected by the health violation and the % of water systems in the state reporting those violations. 
+
+#### The darker colors indicate more unclean water. What is interesting to note is that South Dakota and Oklahoma have a lot of unclean water, and upon researching possible reasons as to why that could be, we found that 
+
+#### 1. There are water test sites from U.S. Geological Survey data that we used for the first 2 plots in Section 4 and 5. 
+
+#### 2. These states have some of the <a href = "https://www.census.gov/population/estimates/state/rank/aiea.txt"> **highest proportions** </a> of Native American populations in the country.
+
+#### This finding implies a correlation between Native American state population proportion and water quality. How exactly Native Americans in those states are affected by water quality should be studied for future research.
+
+<center>
+```{r,fig.width=12, fig.height=8}
+viol$Percent_Pop<-viol$Percent_Pop*100
+viol$Percent_WaterSource<-viol$Percent_WaterSource*100
+
+
+viol$hover <- with(viol, paste0(Percent_Pop, "%: State Population served by contaminated water systems", "<br>", Percent_WaterSource , "%: Community Water Sources reported to have health violations"))
+# give state boundaries a white border
+l <- list(color = toRGB("white"), width = 2)
+# specify some map projection/options
+g <- list(
+  scope = 'usa',
+  projection = list(type = 'Mercator'),
+  showlakes = TRUE,
+  lakecolor = toRGB('white')
+)
+
+plot_ly(viol, z = Percent_Pop, text = hover, locations = State, type = 'choropleth',
+        locationmode = 'USA-states', color = Percent_WaterSource, colors = 'Blues',
+        colorbar = list(title = '% of water systems with reported health violations'),
+        marker = list(line = l)) %>%
+  layout(title = 'Water Contamination in States (based on 2010 EPA data)', geo = g)
+```
+</center>
+
+## Section 8: Unregulated Drinking Water Contaminants  
+
+#### In addition to the multitude of known and regulated substances, under the Safe Drinking Water Act (SDWA), the EPA runs a program called "Monitoring the Occurrence of Unregulated Drinking Water Contaminants". Every 5 years, the EPA collects data for 30 new unregulated contaminants that do not currently have health-based standards, i.e. they are unregulated. The purpose of the program is to support the efforts in determining whether to regulate particular contaminants in the future in the interest of protecting public health.
+
+#### Since 2001, the program has been monitoring large water systems as well as a representative sample of small public water systems serving less than 10,000 people. The data is stored in a nationally and publicly accessible database.
+
+
+### *Unregulated and dangerous*  
+
+#### In the 3rd round (2012-2016) of the EPA program, the occurrence of an industrial compound that was used for decades to make Teflon, an invisible toxic chemical known as POFA, was detected in 94 public water systems serving 6.5 million Americans in 27 different states.
+
+#### The amounts detected of PFOA, as well as other closely related fluorinated chemicals-including PFOS, once used to make Scotchgard, and collectively known as PFCs-are small. However, new research indicates that it can be hazardous even at the tiniest doses and may cause cancer, birth defects, heart disease, and weaken the immune system. In a signal of the growing scientific alarm over the dangers of PFOA, the National Toxicology Program recently announced a <a href = "https://www.federalregister.gov/articles/2015/08/14/2015-20122/systematic-review-of-immunotoxicity-associated-with-exposure-to-pfoa-or-pfos-request-for-information"> **systematic re_evaluation** </a> of the chemical's effect on the immune system. 
+
+#### This interactive plot shows the water systems found to be contaminated by PFOA according to EPA's testing between 2012-2016, as well as the amounts of POFA found at each location.
+
+<center>
+```{r,fig.width=10, fig.height=8}
+UCMR = read.csv("data/UCMR_cleaned.csv")
+df = UCMR[ which(UCMR$Contaminant=='PFOA'), ]
+df = na.omit(df)
+
+library(plotly)
+df$hover <- with(df, paste(city, ",", state, " / PFOA =", AnalyticalResultValue))
+
+plot_ly(df, lat = latitude, lon = longitude, 
+        text = hover,
+        type = 'scattergeo', 
+        locationmode = 'USA-states', 
+        mode = 'markers',
+        marker = list(colorbar = list(title = "PFOA Detected"), 
+                      size = 18, 
+                      opacity = 0.7, 
+                      symbol = 'circle'), 
+        color = AnalyticalResultValue) %>%
+  layout(title = 'Water Contaminated by POFA<br>EPA 2012-16', 
+         geo = list(scope = 'usa', 
+                    projection = list(type = 'albers usa'), 
+                    showland = TRUE, 
+                    landcolor = toRGB("gray95"), 
+                    subunitcolor = toRGB("gray85"), 
+                    countrycolor = toRGB("gray85"), 
+                    countrywidth = 0.5, 
+                    subunitwidth = 0.5))
+```
+
+</center>
+
+#### This interactive plot shows the water systems found to be contaminated by each of the chemicals known as PFCs, including POFA, PFOS, PFNA, PFHxS, PFHpA, PFBS, according to EPA's testing between 2012-2016.
+
+<center>
+```{r,fig.width=10, fig.height=8}
+# common map properties
+# plot of Unregulated Drinking Water PFC Contaminants, EPA 2012-16
+
+g <- list(scope = 'usa', showland = T, landcolor = toRGB("gray90"), showcountries = F, subunitcolor = toRGB("white"))
+
+# Contaminant text labels
+con <- unique(UCMR$Contaminant)
+id <- seq_along(con)
+UCMR9 <- data.frame(
+  Contaminant = con,
+  id = id
+)
+
+# id for anchoring traces on different plots
+UCMR$id <- as.integer(factor(UCMR$Contaminant))
+UCMR <- na.omit(UCMR)
+
+p <- plot_ly(UCMR, type = 'scattergeo', lon = longitude, lat = latitude, group = Contaminant,
+             geo = paste0("geo", id), showlegend = F,
+             marker = list(opacity = 1)) %>%
+  add_trace(lon = -78, lat = 47, mode = 'text', group = Contaminant, type = 'scattergeo', showlegend = F,
+            geo = paste0("geo", id), text = Contaminant, data = UCMR9) %>%
+  layout(title = 'Unregulated Drinking Water PFC Contaminants<br>EPA 2012-16',
+         geo = g,
+         autosize = F,
+         width = 1000,
+         height = 900,
+         hovermode = F)
+
+subplot(p, nrows = 3)
+```
+</center>
+
+## Section 9: Conclusion
+
+#### This project was inspired by reports of high levels of lead in drinking water in Flint, Michigan and Newark, New Jersey. Our report has shown that there are many other sources of contamination in drinking water, regulated and unregulated, and that these pollutants are found in a number of drinking water sources throughout the United States. We hope that our presentation inspires future research. We also hope that it motivates its readers to think critically about where they get their drinking water from and to hold officials accountable for providing clean drinking water, regardless of where in the world our readers live.
