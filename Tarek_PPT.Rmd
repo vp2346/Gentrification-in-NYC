@@ -1,0 +1,66 @@
+#set the working directory
+```{r}
+setwd ("/Users/tarek/Dropbox/DSI/STAT_W4701_EDAV/Project 3")
+```
+
+# plot of Water Contaminated by POFA, EPA 2012-16
+```{r}
+UCMR = read.csv("UCMR_cleaned.csv")
+df = UCMR[ which(UCMR$Contaminant=='PFOA'), ]
+df = na.omit(df)
+
+library(plotly)
+df$hover <- with(df, paste(city, ",", state, " / PFOA =", AnalyticalResultValue))
+
+plot_ly(df, lat = latitude, lon = longitude, 
+        text = hover,
+        type = 'scattergeo', 
+        locationmode = 'USA-states', 
+        mode = 'markers',
+        marker = list(colorbar = list(title = "PFOA Detected"), 
+                      size = 18, 
+                      opacity = 0.7, 
+                      symbol = 'circle'), 
+        color = AnalyticalResultValue) %>%
+  layout(title = 'Water Contaminated by POFA<br>EPA 2012-16', 
+         geo = list(scope = 'usa', 
+                    projection = list(type = 'albers usa'), 
+                    showland = TRUE, 
+                    landcolor = toRGB("gray95"), 
+                    subunitcolor = toRGB("gray85"), 
+                    countrycolor = toRGB("gray85"), 
+                    countrywidth = 0.5, 
+                    subunitwidth = 0.5))
+```
+
+# plot of Unregulated Drinking Water PFC Contaminants, EPA 2012-16
+```{r}
+# common map properties
+g <- list(scope = 'usa', showland = T, landcolor = toRGB("gray90"), showcountries = F, subunitcolor = toRGB("white"))
+
+# Contaminant text labels
+con <- unique(UCMR$Contaminant)
+id <- seq_along(con)
+UCMR9 <- data.frame(
+  Contaminant = con,
+  id = id
+)
+
+# id for anchoring traces on different plots
+UCMR$id <- as.integer(factor(UCMR$Contaminant))
+UCMR <- na.omit(UCMR)
+
+p <- plot_ly(UCMR, type = 'scattergeo', lon = longitude, lat = latitude, group = Contaminant,
+             geo = paste0("geo", id), showlegend = F,
+             marker = list(opacity = 1)) %>%
+  add_trace(lon = -78, lat = 47, mode = 'text', group = Contaminant, type = 'scattergeo', showlegend = F,
+            geo = paste0("geo", id), text = Contaminant, data = UCMR9) %>%
+  layout(title = 'Unregulated Drinking Water PFC Contaminants<br>EPA 2012-16',
+         geo = g,
+         autosize = F,
+         width = 1000,
+         height = 900,
+         hovermode = F)
+
+subplot(p, nrows = 3)
+```
